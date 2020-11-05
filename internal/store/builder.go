@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strings"
 
+	clusterv1 "github.com/open-cluster-management/api/cluster/v1"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
@@ -194,6 +195,7 @@ var availableStores = map[string]func(f *Builder) cache.Store{
 	"validatingwebhookconfigurations": func(b *Builder) cache.Store { return b.buildValidatingWebhookConfigurationStore() },
 	"volumeattachments":               func(b *Builder) cache.Store { return b.buildVolumeAttachmentStore() },
 	"verticalpodautoscalers":          func(b *Builder) cache.Store { return b.buildVPAStore() },
+	"managedclusters":                 func(b *Builder) cache.Store { return b.buildManagedClusterStore() },
 }
 
 func resourceExists(name string) bool {
@@ -223,6 +225,10 @@ func (b *Builder) buildDaemonSetStore() cache.Store {
 
 func (b *Builder) buildDeploymentStore() cache.Store {
 	return b.buildStoreFunc(deploymentMetricFamilies, &appsv1.Deployment{}, createDeploymentListWatch)
+}
+
+func (b *Builder) buildManagedClusterStore() cache.Store {
+	return b.buildStoreFunc(managedClusterMetricFamilies, &clusterv1.ManagedCluster{}, createManagedClusterListWatch)
 }
 
 func (b *Builder) buildEndpointsStore() cache.Store {

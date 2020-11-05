@@ -18,7 +18,9 @@ spec:
         app.kubernetes.io/version: 2.0.0-alpha.2
     spec:
       containers:
-      - image: quay.io/coreos/kube-state-metrics:v2.0.0-alpha.2
+      - image: gcr.io/k8s-staging-kube-state-metrics/kube-state-metrics-amd64:v2.0.0-alpha.2
+        args:
+        - '--resources=managedclusters,deployments'
         livenessProbe:
           httpGet:
             path: /healthz

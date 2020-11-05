@@ -7,7 +7,7 @@ COPY . /go/src/k8s.io/kube-state-metrics/
 
 RUN make build-local
 
-FROM gcr.io/distroless/static:latest
+FROM registry.access.redhat.com/ubi8/ubi-minimal:latest
 COPY --from=builder /go/src/k8s.io/kube-state-metrics/kube-state-metrics /
 
 USER nobody

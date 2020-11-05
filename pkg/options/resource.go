@@ -54,5 +54,6 @@ var (
 		"storageclasses":                  struct{}{},
 		"validatingwebhookconfigurations": struct{}{},
 		"volumeattachments":               struct{}{},
+		"managedclusters":                 struct{}{},
 	}
 )

@@ -115,3 +115,11 @@ rules:
   verbs:
   - list
   - watch
+- apiGroups:
+  - cluster.open-cluster-management.io
+  resources:
+  - managedclusters
+  verbs:
+  - list
+  - watch
+  
