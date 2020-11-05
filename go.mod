@@ -13,6 +13,7 @@ require (
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
 	github.com/oklog/run v1.1.0
 	github.com/open-cluster-management/api v0.0.0-20201007180356-41d07eee4294
+	github.com/open-cluster-management/library-go v0.0.0-20200828173847-299c21e6c3fc
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.7.1
 	github.com/prometheus/client_model v0.2.0

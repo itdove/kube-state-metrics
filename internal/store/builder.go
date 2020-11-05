@@ -224,10 +224,12 @@ func (b *Builder) buildDaemonSetStore() cache.Store {
 }
 
 func (b *Builder) buildDeploymentStore() cache.Store {
+	klog.Info("start buildDeploymentStore")
 	return b.buildStoreFunc(deploymentMetricFamilies, &appsv1.Deployment{}, createDeploymentListWatch)
 }
 
 func (b *Builder) buildManagedClusterStore() cache.Store {
+	klog.Info("start buildManagedClusterStore")
 	return b.buildStoreFunc(managedClusterMetricFamilies, &clusterv1.ManagedCluster{}, createManagedClusterListWatch)
 }
 
@@ -336,6 +338,7 @@ func (b *Builder) buildStore(
 	expectedType interface{},
 	listWatchFunc func(kubeClient clientset.Interface, ns string) cache.ListerWatcher,
 ) cache.Store {
+	klog.Info("start buildStore")
 	filteredMetricFamilies := generator.FilterMetricFamilies(b.allowDenyList, metricFamilies)
 	filteredMetricFamiliesLabels := generator.FilterMetricFamiliesLabels(b.allowLabels, filteredMetricFamilies)
 	composedMetricGenFuncs := generator.ComposeMetricGenFuncs(filteredMetricFamiliesLabels)

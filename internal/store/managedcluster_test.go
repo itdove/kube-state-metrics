@@ -51,10 +51,19 @@ func TestManagedClusterStore(t *testing.T) {
 					Name:              "mc1",
 					CreationTimestamp: metav1.Time{Time: time.Unix(1500000000, 0)},
 					Generation:        21,
+					Labels: map[string]string{
+						"cloud":  "aws",
+						"vendor": "OpenShift",
+					},
+				},
+				Status: clusterv1.ManagedClusterStatus{
+					Version: clusterv1.ManagedClusterVersion{
+						Kubernetes: "v1.16.2",
+					},
 				},
 			},
 			Want: metadata + `
-        acm_managedcluster_created{hub_name="mc1"} 1.5e+09
+        acm_managedcluster_created{cloud="aws",created_via="",hub_name="mc1",vendor="OpenShift",version="v1.16.2"} 1
 `,
 		},
 	}

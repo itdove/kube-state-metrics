@@ -18,19 +18,24 @@ package store
 
 import (
 	"context"
+	"time"
 
+	clusterv1client "github.com/open-cluster-management/api/client/cluster/clientset/versioned"
+	clusterv1informers "github.com/open-cluster-management/api/client/cluster/informers/externalversions"
+	clusterv1 "github.com/open-cluster-management/api/cluster/v1"
+	libgoconfig "github.com/open-cluster-management/library-go/pkg/config"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/dynamic"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/klog/v2"
 	"k8s.io/kube-state-metrics/v2/pkg/metric"
 	generator "k8s.io/kube-state-metrics/v2/pkg/metric_generator"
-
-	clusterv1 "github.com/open-cluster-management/api/cluster/v1"
-	"k8s.io/client-go/rest"
 )
 
 var (
@@ -40,23 +45,26 @@ var (
 		Resource: "managedclusters",
 	}
 
+	cdGVR = schema.GroupVersionResource{
+		Group:    "hive.openshift.io",
+		Version:  "v1",
+		Resource: "clusterdeployments",
+	}
 	descManagedClusterLabelsName          = "acm_managedcluster_labels"
 	descManagedClusterLabelsHelp          = "ACM labels converted to Prometheus labels."
-	descManagedClusterLabelsDefaultLabels = []string{"hub_name"}
+	descManagedClusterLabelsDefaultLabels = []string{"hub_name", "vendor", "cloud", "created_via", "version"}
 	managedClusterMetricFamilies          = []generator.FamilyGenerator{
 		*generator.NewFamilyGenerator(
 			"acm_managedcluster_created",
 			"Unix creation timestamp",
 			metric.Gauge,
 			"",
-			wrapManagedClusterFunc(func(d *clusterv1.ManagedCluster) *metric.Family {
+			wrapManagedClusterFunc(func(mc *clusterv1.ManagedCluster) *metric.Family {
 				ms := []*metric.Metric{}
 
-				if !d.CreationTimestamp.IsZero() {
-					ms = append(ms, &metric.Metric{
-						Value: float64(d.CreationTimestamp.Unix()),
-					})
-				}
+				ms = append(ms, &metric.Metric{
+					Value: float64(1),
+				})
 
 				return &metric.Family{
 					Metrics: ms,
@@ -67,14 +75,41 @@ var (
 )
 
 func wrapManagedClusterFunc(f func(*clusterv1.ManagedCluster) *metric.Family) func(interface{}) *metric.Family {
+	klog.Info("start wrapManagedClusterFunc")
+	klog.Info("start createManagedClusterListWatch")
+	config, err := libgoconfig.LoadConfig("", "", "")
+	if err != nil {
+		klog.Errorf("Error: %s", err)
+		return nil
+	}
+	clientset, err := dynamic.NewForConfig(config)
+	if err != nil {
+		klog.Errorf("Error: %s", err)
+		return nil
+	}
+
 	return func(obj interface{}) *metric.Family {
 		mc := obj.(*clusterv1.ManagedCluster)
-
 		metricFamily := f(mc)
+		createdVia := "hive"
+		_, err = clientset.Resource(cdGVR).Namespace(mc.GetName()).Get(context.TODO(), mc.GetName(), metav1.GetOptions{})
+		if errors.IsNotFound(err) {
+			createdVia = "imported"
+		}
 
 		for _, m := range metricFamily.Metrics {
 			m.LabelKeys = append(descManagedClusterLabelsDefaultLabels, m.LabelKeys...)
-			m.LabelValues = append([]string{mc.Name}, m.LabelValues...)
+			mcLabels := mc.GetLabels()
+			mcVendor := ""
+			mcCloud := ""
+
+			if v, ok := mcLabels["vendor"]; ok {
+				mcVendor = v
+			}
+			if v, ok := mcLabels["cloud"]; ok {
+				mcCloud = v
+			}
+			m.LabelValues = append([]string{mc.Name, mcVendor, mcCloud, createdVia, mc.Status.Version.Kubernetes}, m.LabelValues...)
 		}
 
 		return metricFamily
@@ -82,37 +117,56 @@ func wrapManagedClusterFunc(f func(*clusterv1.ManagedCluster) *metric.Family) fu
 }
 
 func createManagedClusterListWatch(kubeClient clientset.Interface, ns string) cache.ListerWatcher {
+	klog.Info("start createManagedClusterListWatch")
+	config, err := libgoconfig.LoadConfig("", "", "")
+	if err != nil {
+		klog.Errorf("Error: %s", err)
+		return nil
+	}
+	clusterClient, err := clusterv1client.NewForConfig(config)
+	if err != nil {
+		klog.Errorf("Error: %s", err)
+		return nil
+	}
+	clusterInformers := clusterv1informers.NewSharedInformerFactory(clusterClient, 10*time.Second)
+	go clusterInformers.Start(context.TODO().Done())
+
+	// clientset, err := dynamic.NewForConfig(config)
+	// if err != nil {
+	// 	klog.Errorf("Error: %s", err)
+	// 	return nil
+	// }
 
 	return &cache.ListWatch{
 		ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
-			config, err := rest.InClusterConfig()
-			if err != nil {
-				return nil, err
-			}
-			clientset, err := dynamic.NewForConfig(config)
-			if err != nil {
-				return nil, err
-			}
-			u, err := clientset.Resource(mcGVR).List(context.TODO(), opts)
-			if err != nil {
-				return nil, err
-			}
+			klog.Info("ListFunc ManagedCluster")
 			mcList := &clusterv1.ManagedClusterList{}
-			if err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &mcList); err != nil {
+			ls := labels.NewSelector()
+			mcs, err := clusterInformers.Cluster().V1().ManagedClusters().Lister().List(ls)
+			if err != nil {
+				klog.Errorf("Error: %s", err)
 				return nil, err
 			}
+			for i, _ := range mcs {
+				// createdVia := "hive"
+				// _, err = clientset.Resource(cdGVR).Namespace(mc.GetName()).Get(context.TODO(), mc.GetName(), metav1.GetOptions{})
+				// if errors.IsNotFound(err) {
+				// 	createdVia = "imported"
+				// }
+				// labels := mcs[i].GetLabels()
+				// if labels == nil {
+				// 	labels = make(map[string]string)
+				// }
+				// labels["created_via"] = createdVia
+				// mcs[i].SetLabels(labels)
+				mcList.Items = append(mcList.Items, *mcs[i])
+			}
+			klog.Infof("mc # %d\n", len(mcList.Items))
 			return mcList, err
 		},
 		WatchFunc: func(opts metav1.ListOptions) (watch.Interface, error) {
-			config, err := rest.InClusterConfig()
-			if err != nil {
-				return nil, err
-			}
-			clientset, err := dynamic.NewForConfig(config)
-			if err != nil {
-				return nil, err
-			}
-			return clientset.Resource(mcGVR).Watch(context.TODO(), opts)
+			klog.Info("WatchFunc ManagedCluster")
+			return clusterClient.ClusterV1().ManagedClusters().Watch(context.TODO(), opts)
 		},
 	}
 }
